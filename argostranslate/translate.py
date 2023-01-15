@@ -5,7 +5,7 @@ import sentencepiece as spm
 import stanza
 from ctranslate2 import Translator
 
-from argostranslate import apis, fewshot, package, sbd, settings
+from argostranslate import package, settings, sbd, apis, fewshot
 from argostranslate.models import ILanguageModel
 from argostranslate.package import Package
 from argostranslate.utils import info
@@ -159,7 +159,7 @@ class PackageTranslation(ITranslation):
         self.pkg = pkg
         self.translator = None
 
-    def hypotheses(self, input_text: str, num_hypotheses: int = 4) -> list[Hypothesis]:
+    def hypotheses(self, input_text: str, num_hypotheses: int = 1) -> list[Hypothesis]:
         if self.translator is None:
             model_path = str(self.pkg.package_path / "model")
             self.translator = ctranslate2.Translator(model_path, device=settings.device)
@@ -202,7 +202,7 @@ class IdentityTranslation(ITranslation):
         self.from_lang = lang
         self.to_lang = lang
 
-    def hypotheses(self, input_text: str, num_hypotheses: int = 4):
+    def hypotheses(self, input_text: str, num_hypotheses: int = 1):
         return [Hypothesis(input_text, 0) for i in range(num_hypotheses)]
 
 
@@ -232,7 +232,7 @@ class CompositeTranslation(ITranslation):
         self.from_lang = t1.from_lang
         self.to_lang = t2.to_lang
 
-    def hypotheses(self, input_text: str, num_hypotheses: int = 4) -> list[Hypothesis]:
+    def hypotheses(self, input_text: str, num_hypotheses: int = 1) -> list[Hypothesis]:
         t1_hypotheses = self.t1.hypotheses(input_text, num_hypotheses)
 
         # Combine hypotheses
@@ -279,7 +279,7 @@ class CachedTranslation(ITranslation):
         self.to_lang = underlying.to_lang
         self.cache = dict()
 
-    def hypotheses(self, input_text: str, num_hypotheses: int = 4) -> list[Hypothesis]:
+    def hypotheses(self, input_text: str, num_hypotheses: int = 1) -> list[Hypothesis]:
         new_cache = dict()  # 'text': ['t1'...('tN')]
         paragraphs = ITranslation.split_into_paragraphs(input_text)
         translated_paragraphs = []
@@ -392,7 +392,7 @@ class FewShotTranslation(ITranslation):
 
 
 def apply_packaged_translation(
-    pkg: Package, input_text: str, translator: Translator, num_hypotheses: int = 4
+    pkg: Package, input_text: str, translator: Translator, num_hypotheses: int = 1
 ) -> list[Hypothesis]:
     """Applies the translation in pkg to translate input_text.
 
@@ -459,11 +459,13 @@ def apply_packaged_translation(
     translated_batches = translator.translate_batch(
         tokenized,
         replace_unknowns=True,
-        max_batch_size=BATCH_SIZE,
-        beam_size=max(num_hypotheses, 4),
-        num_hypotheses=num_hypotheses,
+        max_batch_size=2000,
+        beam_size=1,
+        num_hypotheses=1,
         length_penalty=0.2,
-        return_scores=True,
+        return_scores=False,
+        no_repeat_ngram_size=1,
+        return_alternatives=False
     )
     info("translated_batches", translated_batches)
 
@@ -474,7 +476,7 @@ def apply_packaged_translation(
         cumulative_score = 0
         for translated_batch in translated_batches:
             translated_tokens += translated_batch[i]["tokens"]
-            cumulative_score += translated_batch[i]["score"]
+            cumulative_score += 1
         detokenized = "".join(translated_tokens)
         detokenized = detokenized.replace("▁", " ")
         value = detokenized
